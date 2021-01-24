@@ -1,0 +1,424 @@
+default_config:
+
+tts:
+  - platform: google_translate
+
+script: !include scripts.yaml
+scene: !include scenes.yaml
+
+group:
+  jadalnia:
+    name: jadalnia
+    entities:
+      - switch.sonoff_1000d8163b
+      - switch.sonoff_1000d816b4
+    
+vacuum:
+  - platform: xiaomi_miio
+    host: 192.168.x.x
+    token: xxxxxxxxxxxxxxxxxxxxx
+    name: Pucuś
+
+frontend:
+    themes: !include_dir_merge_named themes
+
+recorder:
+  db_url: mysql://root:xxxxxxxxxxxxxxxa@core-mariadb/homeassistant?charset=utf8
+  purge_keep_days: 240
+  include:
+    domains:
+      - sensor
+      - binary_sensor
+      - switch
+      - light 
+  exclude:
+    domains:
+      - automation
+      - updater
+    entities:
+      - sun.sun
+      - sensor.time
+      - sensor.date_time_iso 
+      - sensor.yr_symbol 
+      - group.weather 
+      
+google:
+  client_id: xxxxxxxxxxxxxxx
+  client_secret: xxxxxxxxxxxx
+  
+asuswrt:
+  host: 192.168.x.x
+  protocol: ssh
+  username: xxxx
+  password: xxxx
+  sensors:
+    - devices
+    - upload
+    - download
+    - upload_speed
+    - download_speed
+  
+sonoff:
+  username: xxxxx
+  password: xxxx
+  
+notify:
+  - name: Zygmunt
+    platform: smtp
+    server: smtp.gmail.com
+    port: 587
+    timeout: 15
+    sender: zxxxxx
+    encryption: starttls
+    username: xxxx
+    password: xxxxx
+    recipient:
+      - xxxxxxx
+    sender_name: Zygmunt-Wyszedł
+          
+automation:
+  alias: 'Dziadek-drzwi-On'
+  trigger:
+    platform: state
+    entity_id: binary_sensor.sonoff_1000e0ea8c
+    to: 'on'
+  action:
+    service: notify.Zygmunt
+    data:
+        title: 'Drzwi się otworzyły!!'
+        message: 'Drzwi się otworzyły!!'
+        
+automation 2:
+  alias: 'Dziadek-drzwi-Off'
+  trigger:
+    platform: state
+    entity_id: binary_sensor.sonoff_1000e0ea8c
+    to: 'off'
+  action:
+    service: notify.Zygmunt
+    data:
+        title: 'Drzwi się otworzyły!!'
+        message: 'Drzwi się otworzyły!!'
+
+webostv:
+  host: 192.168.x.x
+  name: Duży
+  turn_on_action:
+    service: persistent_notification.create
+    data:
+      message: "Włącz TV"
+  customize:
+    sources:
+      - livetv
+      - youtube
+      - makotv
+      - netflix
+
+media_player:
+
+binary_sensor:
+  - platform: ping
+    host: google.com
+    scan_interval: 120
+    
+  - platform: template
+    sensors:
+      updater_supervisor:
+        friendly_name: 'Updater - Supervisor'
+        device_class: problem
+        entity_id:
+          - sensor.supervisor_updates
+        value_template: "{{ state_attr('sensor.supervisor_updates', 'current_version') != state_attr('sensor.supervisor_updates', 'newest_version') }}"
+        availability_template: "{{ (states('sensor.supervisor_updates') | int(-1)) > -1 }}"
+
+      updater_hacs:
+        friendly_name: 'Updater - HACS'
+        device_class: problem
+        entity_id:
+          - sensor.hacs
+        value_template: "{{ states('sensor.hacs') | int > 0 }}"
+
+      updater_addons:
+        friendly_name: 'Updater - Addons'
+        device_class: problem
+        entity_id:
+          - sensor.supervisor_updates
+        value_template: "{{ states('sensor.supervisor_updates') | int > 0 }}"
+        
+ble_monitor:
+    rounding: True
+    decimals: 1
+    period: 60
+    log_spikes: False
+    use_median: False
+    active_scan: False
+    hci_interface: 0
+    batt_entities: True
+    discovery: True
+    report_unknown: False
+    devices:
+      - mac: 'xxxxxx'
+        encryption_key: '8xxxx'
+      - mac: 'Axxxx'
+        encryption_key: 'xxxx'
+      - mac: 'xxxx'
+        encryption_key: 'xxx'
+
+sensor:
+  - platform: command_line
+    name: log_file_size
+    command: "du -m /config/home-assistant.log | cut -f1"
+    unit_of_measurement: 'MB'
+    value_template: '{{ value | int - 1 }}'
+    
+  - platform: sql
+    db_url: mysql://root:d218b7d9-b2cc-42ad-8393-c25a2439c20a@core-mariadb/homeassistant
+    queries:
+      - name: db_file_size
+        query: 'SELECT table_schema "database", Round(Sum(data_length + index_length) / 1024 / 1024, 1) "value" FROM information_schema.tables WHERE table_schema="homeassistant" GROUP BY table_schema;'
+        column: 'value'
+        unit_of_measurement: MB
+    
+  - platform: dnsip
+  
+  - platform: version
+    name: Latest Available Version
+    beta: false
+    image: raspberrypi4
+    source: hassio
+    
+  - platform: version
+    name: Installed Version
+    source: local
+    
+  - platform: uptime
+  
+  - platform: command_line
+    name: Supervisor updates
+    command: 'curl http://supervisor/supervisor/info -H "Authorization: Bearer $(printenv SUPERVISOR_TOKEN)" | jq ''{"newest_version":.data.version_latest,"current_version":.data.version,"addons":[.data.addons[] | select(.version != .installed)]}'''
+    value_template: "{{ value_json.addons | length }}"
+    json_attributes:
+      - newest_version
+      - current_version
+      - addons
+
+  - platform: command_line
+    name: Updater Audio
+    command: 'curl http://supervisor/audio/info -H "Authorization: Bearer $(printenv SUPERVISOR_TOKEN)" | jq ''{"newest_version":.data.version_latest,"current_version":.data.version}'''
+    value_template: "{% if value_json.newest_version != value_json.current_version %}on{% else %}off{% endif %}"
+    json_attributes:
+      - newest_version
+      - current_version
+
+  - platform: command_line
+    name: Updater DNS
+    command: 'curl http://supervisor/dns/info -H "Authorization: Bearer $(printenv SUPERVISOR_TOKEN)" | jq ''{"newest_version":.data.version_latest,"current_version":.data.version}'''
+    value_template: "{% if value_json.newest_version != value_json.current_version %}on{% else %}off{% endif %}"
+    json_attributes:
+      - newest_version
+      - current_version
+
+  - platform: command_line
+    name: Updater CLI
+    command: 'curl http://supervisor/cli/info -H "Authorization: Bearer $(printenv SUPERVISOR_TOKEN)" | jq ''{"newest_version":.data.version_latest,"current_version":.data.version}'''
+    value_template: "{% if value_json.newest_version != value_json.current_version %}on{% else %}off{% endif %}"
+    json_attributes:
+      - newest_version
+      - current_version
+
+  - platform: command_line
+    name: Updater Core
+    command: 'curl http://supervisor/core/info -H "Authorization: Bearer $(printenv SUPERVISOR_TOKEN)" | jq ''{"newest_version":.data.version_latest,"current_version":.data.version}'''
+    value_template: "{% if value_json.newest_version != value_json.current_version %}on{% else %}off{% endif %}"
+    json_attributes:
+      - newest_version
+      - current_version
+
+  - platform: template
+    sensors:
+
+      ha_uptime:
+        friendly_name: HA Uptime
+        value_template: >
+          {% if states('sensor.uptime') == '0.0' %} 
+            Just restarted...
+          {% else %}
+            {% macro phrase(value, name) %}
+            {%- set value = value | int %}
+            {%- set end = 's' if value > 1 else '' %}
+            {{- '{} {}{}'.format(value, name, end) if value | int > 0 else '' }}
+            {%- endmacro %}
+            
+            {% set weeks = (states('sensor.uptime') | int / 7) | int %}
+            {% set days = (states('sensor.uptime') | int) - (weeks * 7) %}
+            {% set hours = (states('sensor.uptime') | float - states('sensor.uptime') | int) * 24 %}
+            {% set minutes = (hours - hours | int) * 60 %}
+
+            {{ [ phrase(weeks, 'week'), phrase(days, 'day'), phrase(hours, 'hr'), phrase(minutes, 'min') ] | select('!=','') | list | join(', ') }}
+          {% endif %}
+
+      last_boot_date_time:
+        friendly_name: Last Boot
+        value_template: >
+          {% set date = as_timestamp(states('sensor.last_boot')) | timestamp_custom('%d') %}
+          {% set date = '{:01}'.format(date | int) %}
+          {% if date in ('1', '21', '31') %}
+            {% set date = date ~ 'st' %}
+          {% elif date in ('2', '22') %}
+            {% set date = date ~ 'nd' %}
+          {% elif date in ('3', '23') %}
+            {% set date = date ~ 'rd' %}
+          {% else %}
+            {% set date = date ~ 'th' %}
+          {% endif %}
+
+          {{ as_timestamp(states('sensor.last_boot')) | timestamp_custom('%H:%M on %a') }} {{ date }} {{ as_timestamp(states('sensor.last_boot')) | timestamp_custom('%b %Y') }}
+
+      system_uptime:
+        friendly_name: System Uptime
+        entity_id: sensor.time
+        value_template: >
+          {% set up_time = as_timestamp(now()) - as_timestamp(states('sensor.last_boot')) %}
+
+          {% set minutes = (up_time // 60) | int %}
+          {% set hours = (minutes // 60) %}
+          {% set days = (hours // 24) %}
+          {% set weeks = (days // 7) %}
+
+          {% set minutes = (minutes % 60) %}
+          {% set hours =  (hours % 24) %}
+          {% set days = (days % 7) %}
+
+          {% macro phrase(value, name) %}
+                    {%- set value = value %}
+                    {%- set end = 's' if value > 1 else '' %}
+                    {{- '{} {}{}'.format(value, name, end) if value | int > 0 else '' }}
+          {%- endmacro %}
+                    
+          {% set text = [ phrase(weeks, 'week'), phrase(days, 'day'), phrase(hours, 'hr'), phrase(minutes, 'min') ] | select('!=','') | list | join(', ') %}
+          {% set last_comma = text.rfind(',') %}
+          {% if last_comma != -1 %}
+            {% set text = text[:last_comma] + ' and' + text[last_comma + 1:] %}
+          {% endif %}
+          
+          {{ text }}
+
+      rpi_uptime:
+        friendly_name: RPi Uptime
+        entity_id: sensor.time
+        value_template: >
+          {% set up_time = as_timestamp(now()) - as_timestamp(states('sensor.last_boot')) %}
+
+          {% set minutes = (up_time // 60) | int %}
+          {% set hours = (minutes // 60) %}
+          {% set days = (hours // 24) %}
+          {% set weeks = (days // 7) %}
+
+          {% set minutes = (minutes % 60) %}
+          {% set hours =  (hours % 24) %}
+          {% set days = (days % 7) %}
+
+          {% macro phrase(value, name) %}
+                    {%- set value = value %}
+                    {%- set end = 's' if value > 1 else '' %}
+                    {{- '{} {}{}'.format(value, name, end) if value | int > 0 else '' }}
+          {%- endmacro %}
+                    
+          {% set text = [ phrase(weeks, 'week'), phrase(days, 'day'), phrase(hours, 'hr'), phrase(minutes, 'min') ] | select('!=','') | list | join(', ') %}
+          {% set last_comma = text.rfind(',') %}
+          {% if last_comma != -1 %}
+            {% set text = text[:last_comma] + ' and' + text[last_comma + 1:] %}
+          {% endif %}
+          
+          {{ text }}
+    
+  - platform: systemmonitor
+    resources:
+      - type: disk_use_percent
+        arg: /
+      - type: disk_free
+        arg: /
+      - type: disk_use
+        arg: /
+      - type: memory_free
+      - type: memory_use_percent
+      - type: memory_use
+      - type: swap_use_percent
+      - type: swap_use
+      - type: swap_free
+      - type: load_1m
+      - type: load_5m
+      - type: load_15m
+      - type: network_in
+        arg: eth0
+      - type: network_out
+        arg: eth0
+      - type: throughput_network_in
+        arg: eth0
+      - type: throughput_network_out
+        arg: eth0
+      - type: packets_in
+        arg: eth0
+      - type: packets_out
+        arg: eth0
+      - type: ipv4_address
+        arg: eth0
+      - type: processor_use
+      - type: last_boot
+      
+  - platform: command_line
+    name: CPU Temperature
+    command: "cat /sys/class/thermal/thermal_zone0/temp"
+    unit_of_measurement: "°C"
+    value_template: '{{ value | multiply(0.001) | round(1) }}'
+    
+  - platform: template
+    sensors:
+
+      count_automations:
+        entity_id: sensor.date
+        value_template: "{{ states.automation | list | length }}"
+
+      count_scripts:
+        entity_id: sensor.date
+        value_template: "{{ states.script| list | length }}"
+
+      count_device_trackers:
+        entity_id: sensor.date
+        value_template: "{{ states.device_tracker | list | length }}"
+
+      count_binary_sensors:
+        entity_id: sensor.date
+        value_template: "{{ states.binary_sensor| list | length }}"
+
+      count_sensors:
+        entity_id: sensor.date
+        value_template: "{{ states.sensor | list | length }}"
+
+      count_switches:
+        entity_id: sensor.date
+        value_template: "{{ states.switch | list | length }}"
+
+      count_zones:
+        entity_id: sensor.date
+        value_template: "{{ states.zone | list | length }}"
+
+      count_input_booleans:
+        entity_id: sensor.date
+        value_template: "{{ states.input_boolean | list | length }}"
+
+      count_input_numbers:
+        entity_id: sensor.date
+        value_template: "{{ states.input_number | list | length }}"
+
+      count_input_texts:
+        entity_id: sensor.date
+        value_template: "{{ states.input_text | list | length }}"
+
+      count_input_selects:
+        entity_id: sensor.date
+        value_template: "{{ states.input_select | list | length }}"
+
+      count_input_datetimes:
+        entity_id: sensor.date
+        value_template: "{{ states.input_datetime | list | length }}"
